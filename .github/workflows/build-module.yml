@@ -1,0 +1,46 @@
+name: Build Custom Kernel Modules
+on:
+  workflow_dispatch:
+    inputs:
+      module_path:
+        description: '要编译的模块路径 (比如 drivers/net/wireless/mediatek)'
+        required: true
+        default: 'drivers/net/wireless/mediatek'
+
+jobs:
+  build_module:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          android: false
+          dotnet: true
+          haskell: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libelf-dev zlib1g-dev libssl-dev bc dwarves pahole bison flex
+
+      - name: Setup repo
+        run: |
+          mkdir -p "$HOME/bin"
+          curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo -o "$HOME/bin/repo"
+          chmod +x "$HOME/bin/repo"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Build Specific Module
+        env:
+          MODULE_PATH: ${{ inputs.module_path }}
+        run: |
+          bash build_module.sh
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: compiled-modules
+          path: modules_*.zip
