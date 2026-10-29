@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       module_path:
-        description: '要编译的模块路径 (比如 drivers/net/wireless/mediatek)'
+        description: '要编译的模块相对路径 (如 drivers/net/wireless/mediatek)'
         required: true
         default: 'drivers/net/wireless/mediatek'
 
