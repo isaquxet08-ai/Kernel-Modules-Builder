@@ -10,7 +10,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Free Disk Space (极速扩容)
+      - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
         with:
           android: true
@@ -26,19 +26,13 @@ jobs:
 
       - name: Setup GKI Source & KSU
         run: |
-          # 拉取精简内核源码树
           git clone --depth=1 https://android.googlesource.com/kernel/common -b android12-5.10 gki_kernel
-          
-          # 捞取 build-55-force 的满血符号表
           wget -O gki_kernel/Module.symvers "https://github.com/isaquxet08-ai/Kernel-Builder-GKI-Susfs/releases/download/build-55-force/Module.symvers"
-          
-          # 拉取 KernelSU 源码并放入内核树
           git clone --depth=1 https://github.com/tiann/KernelSU.git
           cp -r KernelSU/kernel gki_kernel/drivers/kernelsu
 
       - name: Download Clang Toolchain
         run: |
-          # 去掉了 -q，现在它会真实显示下载进度条
           wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-12.0.0_r1/clang-r416183b.tar.gz
           mkdir -p clang
           tar -xzf clang-r416183b.tar.gz -C clang
@@ -47,16 +41,9 @@ jobs:
       - name: Build Module
         run: |
           cd gki_kernel
-          # 1. 生成基础配置
           make ARCH=arm64 gki_defconfig
-          
-          # 2. 关键修复：先准备宿主工具（这会编译出 modpost 等工具，解决刚才的报错）
-          make ARCH=arm64 LLVM=1 LLVM_IAS=1 modules_prepare
-          
-          # 3. 正式编译 KSU 模块
-          make ARCH=arm64 LLVM=1 LLVM_IAS=1 M=drivers/kernelsu modules
-          
-          # 4. 收集编译好的 .ko 文件
+          make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- modules_prepare
+          make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- M=drivers/kernelsu modules
           find . -name "*.ko" -exec cp {} ../ \;
 
       - name: Upload Artifact
