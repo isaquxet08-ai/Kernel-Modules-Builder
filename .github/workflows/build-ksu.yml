@@ -1,0 +1,59 @@
+name: Build KernelSU LKM
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build_ksu:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          android: false
+          dotnet: true
+          haskell: true
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libelf-dev zlib1g-dev libssl-dev bc dwarves pahole bison flex
+
+      - name: Setup GKI Source & KSU
+        run: |
+          # 1. 拉取轻量级 GKI 源码树 (和主内核 android12-5.10 对应)
+          git clone --depth=1 https://android.googlesource.com/kernel/common -b android12-5.10 gki_kernel
+          
+          # 2. 拉取你在 build-55-force 里生成的满血符号表
+          wget -O gki_kernel/Module.symvers "https://github.com/isaquxet08-ai/Kernel-Builder-GKI-Susfs/releases/download/build-55-force/Module.symvers"
+          
+          # 3. 拉取 KernelSU 源码，并拷入内核树
+          git clone --depth=1 https://github.com/tiann/KernelSU.git
+          cp -r KernelSU/kernel gki_kernel/drivers/kernelsu
+
+      - name: Download Clang Toolchain
+        run: |
+          # 下载 AOSP 预编译的 clang
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-12.0.0_r1/clang-r416183b.tar.gz
+          mkdir -p clang
+          tar -xzf clang-r416183b.tar.gz -C clang
+          echo "$PWD/clang/bin" >> $GITHUB_PATH
+
+      - name: Build Module
+        run: |
+          cd gki_kernel
+          # 生成基础配置
+          make ARCH=arm64 gki_defconfig
+          # 强行编译 KSU 模块
+          make ARCH=arm64 LLVM=1 LLVM_IAS=1 M=drivers/kernelsu modules
+          # 抓取编好的 .ko 文件
+          find . -name "*.ko" -exec cp {} ../ \;
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernelsu-lkm
+          path: "*.ko"
