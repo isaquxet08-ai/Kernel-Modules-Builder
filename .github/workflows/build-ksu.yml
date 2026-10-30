@@ -3,6 +3,9 @@ name: Build KernelSU LKM
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build_ksu:
     runs-on: ubuntu-22.04
@@ -43,11 +46,18 @@ jobs:
           cd gki_kernel
           make ARCH=arm64 gki_defconfig
           make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- modules_prepare
-          make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- M=drivers/kernelsu modules
+          # 修复：强制加上 CONFIG_KSU=m 编译模块
+          make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- CONFIG_KSU=m M=drivers/kernelsu modules
           find . -name "*.ko" -exec cp {} ../ \;
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      # 【改动点】发布到 Release 发行版
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v1
         with:
-          name: kernelsu-lkm
-          path: "*.ko"
+          tag_name: ksu-lkm-${{ github.run_number }}
+          name: KernelSU LKM Build ${{ github.run_number }}
+          draft: false
+          prerelease: true
+          files: "*.ko"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
