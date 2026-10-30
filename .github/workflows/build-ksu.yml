@@ -34,13 +34,10 @@ jobs:
           git config --global http.lowSpeedTime 999999
           
           git clone --depth=1 https://android.googlesource.com/kernel/common -b android12-5.10 gki_kernel
-          
           wget -O gki_kernel/Module.symvers "https://github.com/isaquxet08-ai/Kernel-Builder-GKI-Susfs/releases/download/build-55-force/Module.symvers"
-          
           git clone --depth=1 https://github.com/tiann/KernelSU.git
           
           cp -r KernelSU/kernel gki_kernel/drivers/kernelsu
-          # 🚨 核心修复：把缺失的 uapi 头文件目录也复制进去，解决 app_profile.h 找不到的问题！
           cp -r KernelSU/uapi gki_kernel/drivers/kernelsu/
 
       - name: Download Clang Toolchain
@@ -53,11 +50,11 @@ jobs:
       - name: Build Module
         run: |
           cd gki_kernel
-          make ARCH=arm64 gki_defconfig
-          make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- modules_prepare
-          
+          yes | make ARCH=arm64 gki_defconfig
+          yes | make ARCH=arm64 olddefconfig
+          yes | make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- modules_prepare
+          yes | make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- security/selinux/flask.h
           make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- CONFIG_KSU=m M=drivers/kernelsu modules
-          
           find . -name "*.ko" -exec cp {} ../ \;
 
       - name: Upload to Release
