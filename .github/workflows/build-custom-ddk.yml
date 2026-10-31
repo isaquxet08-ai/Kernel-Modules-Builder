@@ -5,7 +5,7 @@ on:
 
 permissions:
   contents: read
-  packages: write # 🚨 必须赋予写入包仓库的权限
+  packages: write
 
 jobs:
   build-image:
@@ -23,15 +23,20 @@ jobs:
 
       - name: Build and Push Custom DDK
         run: |
-          echo ">>> 1. 编写专属 Dockerfile..."
+          echo ">>> 1. 编写专属 Dockerfile (包含符号表、vmlinux、flask.h 以及 gh 命令行)..."
           cat > Dockerfile << 'DOCKER_EOF'
-          # 使用官方的 android12-5.10 镜像作为底包
           FROM ghcr.io/ylarod/ddk-min:android12-5.10-20260828
           
-          # 将你本地仓库的符号表直接 COPY 进去覆盖
+          # 🚨 1. 注入你的专属符号表
           COPY Module.symvers /opt/ddk/src/android12-5.10/Module.symvers
           
-          # 🚨 在镜像构建阶段完成所有准备工作，一劳永逸！
+          # 🚨 2. 安装 gh 命令行（直接从官方 Release 下载二进制包，最稳）
+          RUN wget https://github.com/cli/cli/releases/download/v2.40.1/gh_2.40.1_linux_amd64.tar.gz -O /tmp/gh.tar.gz && \
+              tar -xzf /tmp/gh.tar.gz -C /tmp && \
+              mv /tmp/gh_2.40.1_linux_amd64/bin/gh /usr/local/bin/ && \
+              rm -rf /tmp/gh.tar.gz /tmp/gh_2.40.1_linux_amd64
+              
+          # 🚨 3. 在镜像内部预配置好所有环境
           RUN cd /opt/ddk/src/android12-5.10 && \
               export ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- && \
               touch vmlinux && \
@@ -40,10 +45,9 @@ jobs:
               make security/selinux/
           DOCKER_EOF
           
-          echo ">>> 2. 开始构建镜像（这步可能需要几分钟）..."
-          # GitHub 容器仓库的路径必须全小写
+          echo ">>> 2. 开始构建镜像..."
           IMAGE_NAME=ghcr.io/isaquxet08-ai/ddk-custom:android12-5.10
           docker build -t $IMAGE_NAME .
           
-          echo ">>> 3. 推送到云端包仓库..."
+          echo ">>> 3. 推送到包仓库..."
           docker push $IMAGE_NAME
