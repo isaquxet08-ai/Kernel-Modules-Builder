@@ -17,6 +17,7 @@ jobs:
           dotnet: true
           haskell: true
           tool-cache: true
+          swap-storage: true
 
       - name: Setup Swap and Space
         run: |
@@ -77,9 +78,14 @@ jobs:
       - name: Patch Source and Build Init
         run: |
           cd /mnt/aosp
-          rm -rf system/core
-          git clone --depth=1 https://github.com/isaquxet08-ai/platform_system_core.git system/core
           
+          echo ">>> 🚨 凭空捏造假 VNDK 目录..."
+          mkdir -p prebuilts/vndk/v28
+          echo 'soong_namespace { imports: [] }' > prebuilts/vndk/v28/Android.bp
+          
+          export BOARD_VNDK_VERSION=28
+
+          # 🚨 核心：直接改官方拉下来的 system/core，不 clone 了！
           echo ">>> 物理切除 init 的自杀逻辑..."
           sed -i 's/CHECKCALL(mount("sysfs"/mount("sysfs"/g' system/core/init/first_stage_init.cpp
           sed -i 's/CHECKCALL(mount("selinuxfs"/mount("selinuxfs"/g' system/core/init/first_stage_init.cpp
@@ -87,11 +93,8 @@ jobs:
           sed -i 's/abort();/;/g' system/core/init/first_stage_init.cpp
 
           echo ">>> 暴力抹杀 VNDK 强制报错行..."
-          # 直接匹配包含 error: VNDK version 的行并删除
+          sed -i 's/$(error VNDK version .* not found.)//g' build/make/core/board_config.mk
           sed -i '/error: VNDK version/d' build/make/core/board_config.mk
-          
-          # 强行声明环境变量，骗过构建系统
-          export BOARD_VNDK_VERSION=current
           
           echo ">>> 开始编译 init..."
           export ALLOW_MISSING_DEPENDENCIES=true
