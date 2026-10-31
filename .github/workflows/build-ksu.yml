@@ -34,14 +34,12 @@ jobs:
           git clone --depth=1 https://github.com/tiann/KernelSU.git
           
           cp -r KernelSU/kernel gki_kernel/drivers/kernelsu
-          mkdir -p gki_kernel/include/uapi
-          cp -r KernelSU/uapi/* gki_kernel/include/uapi/
           
-          # 🚨 核心修复 1：切除 preinit
+          # 🚨 1. 物理切除 preinit
           sed -i '/preinit/d' gki_kernel/drivers/kernelsu/Makefile
           
-          # 🚨 核心修复 2：物理注入 ksu_cred 声明，解决未定义报错！
-          sed -i '1i extern struct cred *ksu_cred;' gki_kernel/drivers/kernelsu/feature/kernel_umount.c
+          # 🚨 2. 终极魔法：修改 Makefile，强制所有文件包含 ksu.h
+          echo "ccflags-y += -I\$(srctree)/drivers/kernelsu/include -include \$(srctree)/drivers/kernelsu/include/ksu.h" >> gki_kernel/drivers/kernelsu/Makefile
 
       - name: Download Clang Toolchain
         run: |
