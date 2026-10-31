@@ -29,15 +29,28 @@ jobs:
       run: |
         git config --global --add safe.directory $GITHUB_WORKSPACE/ksu_src
         
-        echo ">>> 1. 将本地符号表拷入官方容器..."
         KDIR="/opt/ddk/src/android12-5.10"
+        
+        echo ">>> 1. 将本地符号表拷入官方容器..."
         cp "$GITHUB_WORKSPACE/my_repo/Module.symvers" "$KDIR/Module.symvers"
         
-        echo ">>> 2. 开始编译..."
+        echo ">>> 2. 补全官方容器的内核编译配置..."
+        cd "$KDIR"
+        export ARCH=arm64
+        export LLVM=1
+        export LLVM_IAS=1
+        export CROSS_COMPILE=aarch64-linux-gnu-
+        
+        # 生成配置文件并准备模块编译环境
+        make gki_defconfig
+        make modules_prepare
+        
+        echo ">>> 3. 开始编译 KSU 模块..."
         cd $GITHUB_WORKSPACE/ksu_src/kernel
+        export KDIR="$KDIR"
         CONFIG_KSU=m CC=clang make
         
-        echo ">>> 3. 提取产物..."
+        echo ">>> 4. 提取产物..."
         mkdir -p $GITHUB_WORKSPACE/out
         cp kernelsu.ko "$GITHUB_WORKSPACE/out/android12-5.10_kernelsu.ko"
         llvm-strip -d "$GITHUB_WORKSPACE/out/android12-5.10_kernelsu.ko"
