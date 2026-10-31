@@ -1,0 +1,55 @@
+name: Build KernelSU LKM (Direct Replace)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-lkm:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ylarod/ddk-min:android12-5.10-20260828
+      options: --privileged
+
+    steps:
+    - name: Checkout KernelSU Source
+      uses: actions/checkout@v4
+      with:
+        repository: tiann/KernelSU
+        path: ksu_src
+
+    - name: Checkout My Repo
+      uses: actions/checkout@v4
+      with:
+        path: my_repo
+
+    - name: Build with Local Symvers
+      run: |
+        git config --global --add safe.directory $GITHUB_WORKSPACE/ksu_src
+        
+        echo ">>> 1. 将本地符号表拷入官方容器..."
+        KDIR="/opt/ddk/src/android12-5.10"
+        cp "$GITHUB_WORKSPACE/my_repo/Module.symvers" "$KDIR/Module.symvers"
+        
+        echo ">>> 2. 开始编译..."
+        cd $GITHUB_WORKSPACE/ksu_src/kernel
+        CONFIG_KSU=m CC=clang make
+        
+        echo ">>> 3. 提取产物..."
+        mkdir -p $GITHUB_WORKSPACE/out
+        cp kernelsu.ko "$GITHUB_WORKSPACE/out/android12-5.10_kernelsu.ko"
+        llvm-strip -d "$GITHUB_WORKSPACE/out/android12-5.10_kernelsu.ko"
+        ls -lh "$GITHUB_WORKSPACE/out/android12-5.10_kernelsu.ko"
+
+    - name: Upload to Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ksu-lkm-final-${{ github.run_number }}
+        name: KernelSU LKM Final
+        draft: false
+        prerelease: true
+        files: "out/*.ko"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
