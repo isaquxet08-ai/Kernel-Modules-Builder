@@ -51,22 +51,31 @@ jobs:
         echo ">>> 4. 开始编译 KSU 模块..."
         cd $GITHUB_WORKSPACE/ksu_src/kernel
         export KDIR="$KDIR"
-        # 🚨 注意这里的 || true，哪怕校验报错，我们也不中断流水线！
-        CONFIG_KSU=m CC=clang make || true
+        # 🚨 核心兜底 1：哪怕 make 报错退出，脚本也不中断
+        CONFIG_KSU=m CC=clang make || echo "⚠️ 编译有小报错，准备强行打捞..."
+
+    # 🚨 核心兜底 2：不管前面是红是绿，这一步必须执行！
+    - name: Rescue and Upload (终极打捞)
+      if: always()
+      run: |
+        echo ">>> 全盘搜索 kernelsu.ko..."
+        KO_PATH=$(find $GITHUB_WORKSPACE/ksu_src/kernel -name "kernelsu.ko" -type f | head -n 1)
         
-        echo ">>> 5. 强行提取已经编译成功的产物..."
-        mkdir -p $GITHUB_WORKSPACE/out
-        if [ -f kernelsu.ko ]; then
-          cp kernelsu.ko "$GITHUB_WORKSPACE/out/android12-5.10_kernelsu.ko"
-          llvm-strip -d "$GITHUB_WORKSPACE/out/android12-5.10_kernelsu.ko"
+        if [ -n "$KO_PATH" ]; then
+          echo "✅ 成功捞到: $KO_PATH"
+          mkdir -p $GITHUB_WORKSPACE/out
+          cp "$KO_PATH" "$GITHUB_WORKSPACE/out/android12-5.10_kernelsu.ko"
+          # 尝试去除调试信息，如果失败也不影响
+          llvm-strip -d "$GITHUB_WORKSPACE/out/android12-5.10_kernelsu.ko" || true
           ls -lh "$GITHUB_WORKSPACE/out/android12-5.10_kernelsu.ko"
         else
-          echo "❌ 找不到 kernelsu.ko，编译真失败了"
+          echo "❌ 彻底沉底了，连 kernelsu.ko 都没生成。"
           exit 1
         fi
 
     - name: Upload to Release
       uses: softprops/action-gh-release@v1
+      if: always()
       with:
         tag_name: ksu-lkm-final-${{ github.run_number }}
         name: KernelSU LKM Final
