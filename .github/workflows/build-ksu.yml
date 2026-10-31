@@ -1,32 +1,24 @@
 name: Build KernelSU LKM
-
 on:
   workflow_dispatch:
-
 permissions:
   contents: write
-
 jobs:
   build_ksu:
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Free Disk Space
-        uses: jlumbroso/free-disk-space@main
+      - uses: actions/checkout@v4
+      - uses: jlumbroso/free-disk-space@main
         with:
           android: true
           dotnet: true
           haskell: true
           tool-cache: true
           swap-storage: true
-
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y libelf-dev zlib1g-dev libssl-dev bc dwarves pahole bison flex
-
       - name: Setup GKI Source & KSU
         run: |
           git config --global http.postBuffer 524288000
@@ -35,24 +27,20 @@ jobs:
           git clone --depth=1 https://github.com/tiann/KernelSU.git
           cp -r KernelSU/kernel gki_kernel/drivers/kernelsu
           cp -r KernelSU/uapi gki_kernel/drivers/kernelsu/
-
       - name: Download Clang Toolchain
         run: |
           wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-12.0.0_r1/clang-r416183b.tar.gz
-          mkdir -p clang
-          tar -xzf clang-r416183b.tar.gz -C clang
+          mkdir -p clang && tar -xzf clang-r416183b.tar.gz -C clang
           echo "$PWD/clang/bin" >> $GITHUB_PATH
-
       - name: Build Module
         run: |
           cd gki_kernel
           make ARCH=arm64 gki_defconfig
           make ARCH=arm64 olddefconfig
           make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- modules_prepare
-          make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- security/selinux/flask.h
+          make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- security/selinux/
           make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- CONFIG_KSU=m M=drivers/kernelsu modules
           find . -name "*.ko" -exec cp {} ../ \;
-
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
