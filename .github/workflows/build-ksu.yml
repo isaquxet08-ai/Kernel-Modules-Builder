@@ -1,4 +1,4 @@
-name: Build KernelSU LKM
+name: Build KernelSU LKM (Stable)
 
 on:
   workflow_dispatch:
@@ -29,16 +29,17 @@ jobs:
 
       - name: Setup GKI Source & KSU
         run: |
+          # 1. 拉取内核源码
           git clone --depth=1 https://android.googlesource.com/kernel/common -b android12-5.10 gki_kernel
+          
+          # 2. 拉取你的符号表
           wget -O gki_kernel/Module.symvers "https://github.com/isaquxet08-ai/Kernel-Builder-GKI-Susfs/releases/download/build-55-force/Module.symvers"
-          git clone --depth=1 https://github.com/tiann/KernelSU.git
           
+          # 3. 🚨 核心：拉取 KernelSU 最稳的 v0.9.5 版本！
+          git clone -b v0.9.5 --depth=1 https://github.com/tiann/KernelSU.git
+          
+          # 4. 拷贝源码
           cp -r KernelSU/kernel gki_kernel/drivers/kernelsu
-          cp -r KernelSU/uapi gki_kernel/drivers/kernelsu/
-          
-          sed -i '/preinit/d' gki_kernel/drivers/kernelsu/Makefile
-          
-          echo "ccflags-y += -I\$(srctree)/drivers/kernelsu -include \$(srctree)/drivers/kernelsu/include/ksu.h" >> gki_kernel/drivers/kernelsu/Makefile
 
       - name: Download Clang Toolchain
         run: |
@@ -52,9 +53,16 @@ jobs:
           cd gki_kernel
           make ARCH=arm64 gki_defconfig
           make ARCH=arm64 olddefconfig
+          
+          # 准备编译环境
           make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- modules_prepare
+          
+          # 解决老版本也需要的 flask.h
           make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- security/selinux/
+          
+          # 编译 LKM
           make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- CONFIG_KSU=m M=drivers/kernelsu modules
+          
           find . -name "*.ko" -exec cp {} ../ \;
 
       - name: Upload to Release
