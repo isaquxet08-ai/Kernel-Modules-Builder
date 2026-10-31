@@ -29,16 +29,9 @@ jobs:
 
       - name: Setup GKI Source & KSU
         run: |
-          # 1. 拉取内核源码
           git clone --depth=1 https://android.googlesource.com/kernel/common -b android12-5.10 gki_kernel
-          
-          # 2. 拉取你的符号表
           wget -O gki_kernel/Module.symvers "https://github.com/isaquxet08-ai/Kernel-Builder-GKI-Susfs/releases/download/build-55-force/Module.symvers"
-          
-          # 3. 🚨 核心：拉取 KernelSU 最稳的 v0.9.5 版本！
           git clone -b v0.9.5 --depth=1 https://github.com/tiann/KernelSU.git
-          
-          # 4. 拷贝源码
           cp -r KernelSU/kernel gki_kernel/drivers/kernelsu
 
       - name: Download Clang Toolchain
@@ -53,15 +46,11 @@ jobs:
           cd gki_kernel
           make ARCH=arm64 gki_defconfig
           make ARCH=arm64 olddefconfig
-          
-          # 准备编译环境
           make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- modules_prepare
-          
-          # 解决老版本也需要的 flask.h
           make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- security/selinux/
           
-          # 编译 LKM
-          make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- CONFIG_KSU=m M=drivers/kernelsu modules
+          # 🚨 核心修复：KCFLAGS 强行忽略栈空间警告
+          make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- CONFIG_KSU=m M=drivers/kernelsu KCFLAGS="-Wno-error=frame-larger-than" modules
           
           find . -name "*.ko" -exec cp {} ../ \;
 
