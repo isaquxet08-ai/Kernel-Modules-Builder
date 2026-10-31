@@ -33,13 +33,15 @@ jobs:
           wget -O gki_kernel/Module.symvers "https://github.com/isaquxet08-ai/Kernel-Builder-GKI-Susfs/releases/download/build-55-force/Module.symvers"
           git clone --depth=1 https://github.com/tiann/KernelSU.git
           
-          # 🚨 修复 1：正确拷贝 kernel 源码和 uapi 头文件
           cp -r KernelSU/kernel gki_kernel/drivers/kernelsu
           mkdir -p gki_kernel/include/uapi
           cp -r KernelSU/uapi/* gki_kernel/include/uapi/
           
-          # 🚨 修复 2：物理切除 preinit 模块，绕开 runner.elf 交叉编译错误
+          # 🚨 核心修复 1：切除 preinit
           sed -i '/preinit/d' gki_kernel/drivers/kernelsu/Makefile
+          
+          # 🚨 核心修复 2：物理注入 ksu_cred 声明，解决未定义报错！
+          sed -i '1i extern struct cred *ksu_cred;' gki_kernel/drivers/kernelsu/feature/kernel_umount.c
 
       - name: Download Clang Toolchain
         run: |
@@ -53,17 +55,9 @@ jobs:
           cd gki_kernel
           make ARCH=arm64 gki_defconfig
           make ARCH=arm64 olddefconfig
-          
-          # 准备编译环境
           make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- modules_prepare
-          
-          # 单独编译 selinux 目录生成 flask.h
           make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- security/selinux/
-          
-          # 编译 KSU 模块
           make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- CONFIG_KSU=m M=drivers/kernelsu modules
-          
-          # 提取出编译好的 .ko
           find . -name "*.ko" -exec cp {} ../ \;
 
       - name: Upload to Release
