@@ -34,23 +34,35 @@ jobs:
         echo ">>> 1. 将本地符号表拷入官方容器..."
         cp "$GITHUB_WORKSPACE/my_repo/Module.symvers" "$KDIR/Module.symvers"
         
-        echo ">>> 2. 补全官方容器的内核编译配置..."
+        echo ">>> 2. 补全官方容器的内核基础配置..."
         cd "$KDIR"
         export ARCH=arm64
         export LLVM=1
         export LLVM_IAS=1
         export CROSS_COMPILE=aarch64-linux-gnu-
+        export CLANG_TRIPLE=aarch64-linux-gnu-
         
-        # 生成配置文件并准备模块编译环境
         make gki_defconfig
         make modules_prepare
         
-        echo ">>> 3. 开始编译 KSU 模块..."
+        echo ">>> 3. 下载咱们专属打包的 flask.h 和 av_permissions.h..."
+        wget -q -O /tmp/flask_headers.tar.gz "https://github.com/isaquxet08-ai/Kernel-Modules-Builder/releases/download/selinux-headers-v1/flask_headers.tar.gz"
+        
+        echo ">>> 4. 🚨 终极绝杀：把文件解压并复制到所有它能找的地方..."
+        # 解压到 security/selinux 目录
+        tar -xzf /tmp/flask_headers.tar.gz -C security/selinux/
+        
+        # 复制到 include/linux 目录（防路径找不到）
+        cp security/selinux/flask.h include/linux/ 2>/dev/null || true
+        cp security/selinux/av_permissions.h include/linux/ 2>/dev/null || true
+        
+        echo ">>> 5. 开始编译 KSU 模块（强制指定头文件路径）..."
         cd $GITHUB_WORKSPACE/ksu_src/kernel
         export KDIR="$KDIR"
-        CONFIG_KSU=m CC=clang make
+        # 🚨 这里的 KCFLAGS 加上 -I 路径，强行指路
+        CONFIG_KSU=m CC=clang make KCFLAGS="-I$KDIR/security/selinux"
         
-        echo ">>> 4. 提取产物..."
+        echo ">>> 6. 提取产物..."
         mkdir -p $GITHUB_WORKSPACE/out
         cp kernelsu.ko "$GITHUB_WORKSPACE/out/android12-5.10_kernelsu.ko"
         llvm-strip -d "$GITHUB_WORKSPACE/out/android12-5.10_kernelsu.ko"
