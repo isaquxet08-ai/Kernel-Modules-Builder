@@ -34,12 +34,11 @@ jobs:
           git clone --depth=1 https://github.com/tiann/KernelSU.git
           
           cp -r KernelSU/kernel gki_kernel/drivers/kernelsu
+          cp -r KernelSU/uapi gki_kernel/drivers/kernelsu/
           
-          # 🚨 1. 物理切除 preinit
           sed -i '/preinit/d' gki_kernel/drivers/kernelsu/Makefile
           
-          # 🚨 2. 终极魔法：修改 Makefile，强制所有文件包含 ksu.h
-          echo "ccflags-y += -I\$(srctree)/drivers/kernelsu/include -include \$(srctree)/drivers/kernelsu/include/ksu.h" >> gki_kernel/drivers/kernelsu/Makefile
+          echo "ccflags-y += -I\$(srctree)/drivers/kernelsu -include \$(srctree)/drivers/kernelsu/include/ksu.h" >> gki_kernel/drivers/kernelsu/Makefile
 
       - name: Download Clang Toolchain
         run: |
