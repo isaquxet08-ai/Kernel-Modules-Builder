@@ -1,0 +1,52 @@
+name: Extract Flask Headers
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract-headers:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ylarod/ddk-min:android12-5.10-20260828
+      options: --privileged
+
+    steps:
+      - name: Generate Flask Headers
+        run: |
+          KDIR="/opt/ddk/src/android12-5.10"
+          cd "$KDIR"
+          
+          echo ">>> 正在生成 SELinux 依赖..."
+          export ARCH=arm64
+          export LLVM=1
+          export LLVM_IAS=1
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          
+          make gki_defconfig
+          # 🚨 核心：强行编译 security/selinux 目录，逼出 flask.h
+          make security/selinux/
+          
+          echo ">>> 寻找生成的文件..."
+          find . -name "flask.h"
+          find . -name "av_permissions.h"
+          
+          echo ">>> 正在打包..."
+          mkdir -p /tmp/flask_out
+          cp security/selinux/flask.h /tmp/flask_out/
+          cp security/selinux/av_permissions.h /tmp/flask_out/
+          cd /tmp/flask_out
+          tar -czf /tmp/flask_headers.tar.gz *
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: selinux-headers-v1
+          name: SELinux Flask Headers
+          draft: false
+          prerelease: true
+          files: /tmp/flask_headers.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
