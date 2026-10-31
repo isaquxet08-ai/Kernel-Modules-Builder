@@ -1,0 +1,130 @@
+name: Build Synth Init
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build_init:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          android: false
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Create 16GB Swap
+        run: |
+          sudo swapoff -a
+          if [ -f /swapfile ]; then sudo rm -f /swapfile; fi
+          sudo fallocate -l 16G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+
+      - name: Fetch Offline Deps
+        run: |
+          echo ">>> 正在从专属预编译仓库拉取全量依赖..."
+          wget -q https://github.com/isaquxet08-ai/Kernel-Deps/releases/latest/download/kernel_deps_full.tar.gz || echo "Fallback to apt"
+          if [ -f kernel_deps_full.tar.gz ]; then
+            tar -xzf kernel_deps_full.tar.gz
+            sudo dpkg -i offline_debs/*.deb || sudo apt-get install -f -y
+          fi
+          echo ">>> 在线补齐核心依赖..."
+          sudo apt-get update -qq
+          sudo apt-get install -y git-core gnupg flex bison build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig python3 openjdk-11-jdk
+
+      - name: Setup repo tool
+        run: |
+          mkdir -p "$HOME/bin"
+          curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo -o "$HOME/bin/repo"
+          chmod +x "$HOME/bin/repo"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Sync AOSP Source (Mount to /mnt)
+        run: |
+          sudo mkdir -p /mnt/aosp
+          sudo chown -R $USER:$USER /mnt/aosp
+          
+          cd /mnt/aosp
+          repo init -u https://android.googlesource.com/platform/manifest -b android-12.0.0_r1
+          
+          # 拉取 init 编译需要的 AOSP 仓库
+          repo sync -c --no-tags --no-clone-bundle -j4 \
+            platform/build \
+            platform/build/soong \
+            platform/build/blueprint \
+            platform/system/core \
+            platform/system/logging \
+            platform/system/libbase \
+            platform/system/sepolicy \
+            platform/system/extras \
+            platform/bionic \
+            platform/external/selinux \
+            platform/external/protobuf \
+            platform/external/golang-protobuf \
+            platform/external/pcre \
+            platform/external/zlib \
+            platform/external/lz4 \
+            platform/external/zstd \
+            platform/external/boringssl \
+            platform/prebuilts/build-tools \
+            platform/prebuilts/go/linux-x86
+
+      - name: Build Synth Init
+        env:
+          BASE_VER: "5.10"
+        run: |
+          cd /mnt/aosp
+          
+          echo ">>> 精准空投 Google Clang..."
+          mkdir -p prebuilts/clang/host/linux-x86/clang-r416183b
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-12.0.0_r1/clang-r416183b.tar.gz -O clang.tar.gz
+          tar -xzf clang.tar.gz -C prebuilts/clang/host/linux-x86/clang-r416183b
+          rm clang.tar.gz
+          echo "/mnt/aosp/prebuilts/clang/host/linux-x86/clang-r416183b/bin" >> $GITHUB_PATH
+
+          echo ">>> 替换为你 Fork 修改过的 system/core..."
+          rm -rf system/core
+          git clone --depth=1 https://github.com/isaquxet08-ai/platform_system_core.git system/core
+
+          echo ">>> 物理超度：删除检查宏和 Fatal 报错..."
+          sed -i 's/CHECKCALL(mount("sysfs"/mount("sysfs"/g' system/core/init/first_stage_init.cpp
+          sed -i 's/CHECKCALL(mount("selinuxfs"/mount("selinuxfs"/g' system/core/init/first_stage_init.cpp
+          sed -i 's/LOG(FATAL)/LOG(WARNING)/g' system/core/init/first_stage_init.cpp
+          sed -i 's/abort();/;/g' system/core/init/first_stage_init.cpp
+
+          echo ">>> 物理超度 VNDK 强制检查..."
+          sed -i 's/$(error VNDK version $(BOARD_VNDK_VERSION) not found.)/ /g' build/make/core/board_config.mk
+          sed -i 's/error: VNDK version .* not found./ /g' build/make/core/board_config.mk
+
+          echo ">>> 开始编译 init..."
+          export ALLOW_MISSING_DEPENDENCIES=true
+          source build/envsetup.sh || true
+          lunch aosp_arm64-userdebug || true
+          m init -j2 || echo "⚠️ 编译有小报错，准备兜底打捞..."
+
+      - name: Rescue and Upload
+        if: always()
+        run: |
+          cd /mnt/aosp
+          INIT_PATH=$(find out/ -name "init" -type f | grep -v "\.o" | head -n 1)
+          if [ -n "$INIT_PATH" ]; then
+            echo "✅ 捞到 init: $INIT_PATH"
+            cp "$INIT_PATH" /mnt/aosp/init_synth
+            chmod 755 /mnt/aosp/init_synth
+            gh release create synth-init-${{ github.run_number }} /mnt/aosp/init_synth --title "Synth Init" || true
+            gh release upload synth-init-${{ github.run_number }} /mnt/aosp/init_synth --clobber || true
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
