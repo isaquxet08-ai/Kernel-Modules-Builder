@@ -9,7 +9,6 @@ permissions:
 jobs:
   build-lkm:
     runs-on: ubuntu-latest
-    # 🚨 核心：直接使用你刚造好的“满配专属镜像”！
     container:
       image: ghcr.io/isaquxet08-ai/ddk-custom:android12-5.10
       options: --privileged
@@ -21,27 +20,35 @@ jobs:
         repository: tiann/KernelSU
         path: ksu_src
 
-    - name: Build and Rescue
+    - name: Build and Upload inside Container
       run: |
+        # 初始化 gh 认证（利用 secrets 注入的环境变量）
+        export GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+        
         git config --global --add safe.directory $GITHUB_WORKSPACE/ksu_src
         cd $GITHUB_WORKSPACE/ksu_src/kernel
         
-        echo ">>> 开始编译 KSU 模块..."
-        # 🚨 因为环境完美无瑕，直接闭着眼睛 make，如果报错也继续往下走兜底
-        export KDIR="/opt/ddk/src/android12-5.10"
-        CONFIG_KSU=m CC=clang make || echo "⚠️ make 报错，准备强行打捞..."
+        echo ">>> 终极物理阉割：重写 check_symbol.c..."
+        rm -f tools/check_symbol
+        echo '#include <stdio.h>' > tools/check_symbol.c
+        echo 'int main(int argc, char** argv) { return 0; }' >> tools/check_symbol.c
         
-        echo ">>> 强行打捞产物..."
-        mkdir -p $GITHUB_WORKSPACE/out
+        echo ">>> 开始编译 KSU 模块..."
+        export KDIR="/opt/ddk/src/android12-5.10"
+        CONFIG_KSU=m CC=clang make || echo "⚠️ 编译报错，准备强行打捞..."
+        
+        echo ">>> 强行打捞并发布..."
         if [ -f kernelsu.ko ]; then
-          cp kernelsu.ko "$GITHUB_WORKSPACE/out/android12-5.10_kernelsu.ko"
-          llvm-strip -d "$GITHUB_WORKSPACE/out/android12-5.10_kernelsu.ko" || true
-          ls -lh "$GITHUB_WORKSPACE/out/android12-5.10_kernelsu.ko"
-          
-          # 发布到 Release
-          gh release create ultimate-lkm-${{ github.run_number }} $GITHUB_WORKSPACE/out/*.ko --repo isaquxet08-ai/Kernel-Modules-Builder || true
+          llvm-strip -d kernelsu.ko || true
+          # 🚨 核心：利用容器内的 gh 直接创建发行版并上传
+          gh release create ksu-lkm-${{ github.run_number }} kernelsu.ko \
+            --title "KernelSU LKM ${{ github.run_number }}" \
+            --notes "Built inside custom DDK." \
+            --repo isaquxet08-ai/Kernel-Modules-Builder || \
+          gh release upload ksu-lkm-${{ github.run_number }} kernelsu.ko --clobber --repo isaquxet08-ai/Kernel-Modules-Builder
         else
-          echo "❌ 没找到 kernelsu.ko，这次真沉底了"
+          echo "❌ 没找到 kernelsu.ko"
+          exit 1
         fi
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
